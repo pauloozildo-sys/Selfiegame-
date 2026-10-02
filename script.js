@@ -192,7 +192,7 @@ function startGameplay() {
 
   // Tutorial na primeira vez
   if (!tutorialShown) {
-    tutorialModal.classList.add('active');
+    setTimeout(() => tutorialModal.classList.add('active'), 500);
   }
 }
 
@@ -202,7 +202,7 @@ function formatTime(sec) {
   return `${m}:${s < 10 ? '0' : ''}${s}`;
 }
 
-// ===== RENDERIZA =====
+// ===== RENDERIZA (só uma vez) =====
 function renderBoard() {
   boardEl.innerHTML = '';
   for (let i = 0; i < TOTAL_TILES; i++) {
@@ -224,7 +224,6 @@ function createTileElement(tileId, slotIdx) {
 
   tile.dataset.slotIdx = slotIdx;
 
-  // Verde se tá no lugar certo
   if (tileId === slotIdx) {
     tile.classList.add('correct');
   }
@@ -241,7 +240,7 @@ function handleTileClick(slotIdx, tileEl) {
 
   // Se clicou na mesma peça 2x → desmarca
   if (firstSelected !== null && firstSelected === slotIdx) {
-    document.querySelector(`[data-slot-idx="${slotIdx}"]`)?.classList.remove('selected');
+    tileEl.classList.remove('selected');
     firstSelected = null;
     playSound('select');
     return;
@@ -262,23 +261,32 @@ function handleTileClick(slotIdx, tileEl) {
   const firstTileEl = document.querySelector(`[data-slot-idx="${firstIdx}"]`);
   const secondTileEl = document.querySelector(`[data-slot-idx="${secondIdx}"]`);
 
-  firstTileEl.classList.remove('selected');
-  secondTileEl.classList.add('selected');
-  lockBoard = true;
+  if (!firstTileEl || !secondTileEl) {
+    firstSelected = null;
+    return;
+  }
 
-  // Troca no estado
-  [boardState[firstIdx], boardState[secondIdx]] = [boardState[secondIdx], boardState[firstIdx]];
+  // Remove seleção
+  firstTileEl.classList.remove('selected');
+  secondTileEl.classList.remove('selected');
 
   // Efeito visual
   firstTileEl.classList.add('swapping');
   secondTileEl.classList.add('swapping');
+  lockBoard = true;
+
+  // Troca no ESTADO
+  [boardState[firstIdx], boardState[secondIdx]] = [boardState[secondIdx], boardState[firstIdx]];
+
+  // ⭐ Troca visual: atualiza os backgrounds
+  swapTilesVisual(firstTileEl, secondTileEl);
 
   setTimeout(() => {
     firstTileEl.classList.remove('swapping');
     secondTileEl.classList.remove('swapping');
 
-    renderBoard();
-    calculateScore();
+    // Reavalia cores
+    updateTileColors();
 
     // Som
     if (boardState[firstIdx] === firstIdx || boardState[secondIdx] === secondIdx) {
@@ -287,11 +295,42 @@ function handleTileClick(slotIdx, tileEl) {
       playSound('swap');
     }
 
+    calculateScore();
+
     firstSelected = null;
     lockBoard = false;
 
     checkVictory();
   }, 1000);
+}
+
+// ⭐ Troca o background visual das 2 peças
+function swapTilesVisual(tile1, tile2) {
+  const bgPos1 = tile1.style.backgroundPosition;
+  const bgPos2 = tile2.style.backgroundPosition;
+  const bgImg1 = tile1.style.backgroundImage;
+  const bgImg2 = tile2.style.backgroundImage;
+
+  tile1.style.backgroundPosition = bgPos2;
+  tile2.style.backgroundPosition = bgPos1;
+  tile1.style.backgroundImage = bgImg2;
+  tile2.style.backgroundImage = bgImg1;
+}
+
+// ⭐ Atualiza as cores sem recriar
+function updateTileColors() {
+  const tiles = document.querySelectorAll('.tile');
+
+  tiles.forEach(tile => {
+    const slotIdx = parseInt(tile.dataset.slotIdx);
+    const tileId = boardState[slotIdx];
+
+    tile.classList.remove('correct');
+
+    if (tileId === slotIdx) {
+      tile.classList.add('correct');
+    }
+  });
 }
 
 // ===== PONTUAÇÃO =====
