@@ -1,3 +1,4 @@
+
 // ===== CONFIGURAÇÃO =====
 const ROWS = 4;
 const COLS = 4;
@@ -7,26 +8,33 @@ const TEMPO_JOGO = 180;
 
 // ===== ESTADO =====
 let imageSrc = '';
-let boardState = []; // IDs das peças (0 a 15)
-let gamePhase = 'INIT'; // 'MEMORIZE' | 'PLAYING' | 'ENDED'
+let placedTiles = new Set();      // índices já acertados
+let currentTileIdx = null;         // peça atual (índice 0-15)
+let gamePhase = 'INIT';            // 'MEMORIZE' | 'PLAYING' | 'ENDED'
 let playTime = TEMPO_JOGO;
 let memoTime = TEMPO_MEMORIZACAO;
 let timerInterval = null;
 let currentScore = 0;
-let correctPositions = 0;
-let firstSelected = null; // índice da primeira peça clicada
-let lockBoard = false;
+let correctCount = 0;
 let tutorialShown = false;
+let isDragging = false;
+let dragOffsetX = 0;
+let dragOffsetY = 0;
+let pieceQueue = [];
 
 // ===== ELEMENTOS =====
 const screenStart = document.getElementById('screen-start');
 const screenPreview = document.getElementById('screen-preview');
 const screenGame = document.getElementById('screen-game');
 const previewImg = document.getElementById('preview-img');
-const boardEl = document.getElementById('board');
+const boardWrapper = document.getElementById('board-wrapper');
+const boardBg = document.getElementById('board-bg');
+const boardGrid = document.getElementById('board-grid');
+const floatingPiece = document.getElementById('floating-piece');
 const timerDisplay = document.getElementById('timer-display');
 const timerLabel = document.getElementById('timer-label');
 const scoreDisplay = document.getElementById('score-display');
+const piecesDisplay = document.getElementById('pieces-display');
 const tutorialModal = document.getElementById('tutorial-modal');
 const finalModal = document.getElementById('final-modal');
 
@@ -44,26 +52,20 @@ function playSound(type) {
   osc.connect(gain);
   gain.connect(audioCtx.destination);
   const now = audioCtx.currentTime;
-  if (type === 'select') {
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(660, now);
-    gain.gain.setValueAtTime(0.1, now);
-    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
-    osc.start(now); osc.stop(now + 0.1);
-  } else if (type === 'swap') {
-    osc.type = 'triangle';
-    osc.frequency.setValueAtTime(440, now);
-    osc.frequency.exponentialRampToValueAtTime(660, now + 0.15);
-    gain.gain.setValueAtTime(0.15, now);
-    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
-    osc.start(now); osc.stop(now + 0.2);
-  } else if (type === 'correct') {
+  if (type === 'correct') {
     osc.type = 'sine';
     osc.frequency.setValueAtTime(523.25, now);
     osc.frequency.exponentialRampToValueAtTime(880, now + 0.2);
     gain.gain.setValueAtTime(0.2, now);
     gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
     osc.start(now); osc.stop(now + 0.3);
+  } else if (type === 'error') {
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(160, now);
+    osc.frequency.linearRampToValueAtTime(110, now + 0.2);
+    gain.gain.setValueAtTime(0.15, now);
+    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+    osc.start(now); osc.stop(now + 0.2);
   } else if (type === 'victory') {
     osc.type = 'sine';
     [523.25, 659.25, 783.99, 1046.50].forEach((f, i) => osc.frequency.setValueAtTime(f, now + i * 0.12));
@@ -79,7 +81,7 @@ function showScreen(id) {
   document.getElementById(id).classList.add('active');
 }
 
-// ===== TIRAR/ESCOLHER FOTO =====
+// ===== FOTO =====
 document.getElementById('btn-camera').addEventListener('click', () => inputCamera.click());
 document.getElementById('btn-gallery').addEventListener('click', () => inputGallery.click());
 
@@ -113,7 +115,6 @@ function handleFile(e) {
     img.src = event.target.result;
   };
   reader.readAsDataURL(file);
-
   e.target.value = '';
 }
 
@@ -136,20 +137,20 @@ function startMemorization() {
   timerDisplay.textContent = `${memoTime}s`;
   timerDisplay.classList.remove('urgent');
 
-  // Monta tabuleiro mostrando imagem completa
-  boardEl.innerHTML = '';
+  // Tabuleiro mostra imagem completa
+  boardBg.style.backgroundImage = `url(${imageSrc})`;
+  boardBg.style.opacity = '1';
+
+  // Grid vazio (sem slots visíveis)
+  boardGrid.innerHTML = '';
   for (let i = 0; i < TOTAL_TILES; i++) {
-    const tile = document.createElement('div');
-    tile.className = 'tile correct';
-    tile.style.backgroundImage = `url(${imageSrc})`;
-    tile.style.backgroundSize = `${COLS * 100}% ${ROWS * 100}%`;
-
-    const col = i % COLS;
-    const row = Math.floor(i / COLS);
-    tile.style.backgroundPosition = `${(col / (COLS - 1)) * 100}% ${(row / (ROWS - 1)) * 100}%`;
-
-    boardEl.appendChild(tile);
+    const slot = document.createElement('div');
+    slot.className = 'slot';
+    slot.dataset.index = i;
+    boardGrid.appendChild(slot);
   }
+
+  floatingPiece.style.display = 'none';
 
   timerInterval = setInterval(() => {
     memoTime--;
@@ -168,18 +169,21 @@ function startGameplay() {
   timerLabel.textContent = 'TEMPO';
   timerDisplay.textContent = formatTime(playTime);
 
-  // Embaralha as 16 peças (garantindo que não fique tudo certo)
-  let shuffled;
-  do {
-    shuffled = Array.from({ length: TOTAL_TILES }, (_, i) => i);
-    shuffled.sort(() => Math.random() - 0.5);
-  } while (shuffled.every((id, idx) => id === idx));
+  // Opaca a imagem de fundo
+  boardBg.style.opacity = '0.4';
 
-  boardState = shuffled;
+  // Zera estado
+  placedTiles = new Set();
+  correctCount = 0;
+  currentScore = 0;
+  scoreDisplay.textContent = '0';
+  piecesDisplay.textContent = `0/${TOTAL_TILES}`;
 
-  renderBoard();
-  calculateScore();
+  // Cria fila embaralhada de peças
+  pieceQueue = Array.from({ length: TOTAL_TILES }, (_, i) => i);
+  pieceQueue.sort(() => Math.random() - 0.5);
 
+  // Timer
   timerInterval = setInterval(() => {
     playTime--;
     timerDisplay.textContent = formatTime(playTime);
@@ -190,10 +194,13 @@ function startGameplay() {
     }
   }, 1000);
 
-  // Tutorial na primeira vez
+  // Tutorial primeira vez
   if (!tutorialShown) {
     setTimeout(() => tutorialModal.classList.add('active'), 500);
   }
+
+  // Primeira peça
+  spawnNextPiece();
 }
 
 function formatTime(sec) {
@@ -202,164 +209,175 @@ function formatTime(sec) {
   return `${m}:${s < 10 ? '0' : ''}${s}`;
 }
 
-// ===== RENDERIZA (só uma vez) =====
-function renderBoard() {
-  boardEl.innerHTML = '';
-  for (let i = 0; i < TOTAL_TILES; i++) {
-    const tileId = boardState[i];
-    const tile = createTileElement(tileId, i);
-    boardEl.appendChild(tile);
-  }
-}
-
-function createTileElement(tileId, slotIdx) {
-  const tile = document.createElement('div');
-  tile.className = 'tile';
-  tile.style.backgroundImage = `url(${imageSrc})`;
-  tile.style.backgroundSize = `${COLS * 100}% ${ROWS * 100}%`;
-
-  const col = tileId % COLS;
-  const row = Math.floor(tileId / COLS);
-  tile.style.backgroundPosition = `${(col / (COLS - 1)) * 100}% ${(row / (ROWS - 1)) * 100}%`;
-
-  tile.dataset.slotIdx = slotIdx;
-
-  if (tileId === slotIdx) {
-    tile.classList.add('correct');
+// ===== SPAWN DA PEÇA =====
+function spawnNextPiece() {
+  if (pieceQueue.length === 0) {
+    // Acabaram as peças
+    if (correctCount === TOTAL_TILES) {
+      endGame(true);
+    }
+    return;
   }
 
-  tile.addEventListener('click', () => handleTileClick(slotIdx, tile));
+  currentTileIdx = pieceQueue.shift();
 
-  return tile;
+  // Aplica background
+  floatingPiece.style.backgroundImage = `url(${imageSrc})`;
+  floatingPiece.style.backgroundSize = `${COLS * 100}% ${ROWS * 100}%`;
+
+  const col = currentTileIdx % COLS;
+  const row = Math.floor(currentTileIdx / COLS);
+  floatingPiece.style.backgroundPosition = `${(col / (COLS - 1)) * 100}% ${(row / (ROWS - 1)) * 100}%`;
+
+  // Posição aleatória no tabuleiro (mas não em cima do slot correto)
+  const wrapperRect = boardWrapper.getBoundingClientRect();
+  const pieceSize = wrapperRect.width * 0.25;
+
+  let randomX, randomY;
+  const correctX = (currentTileIdx % COLS) * (wrapperRect.width / COLS);
+  const correctY = Math.floor(currentTileIdx / COLS) * (wrapperRect.height / ROWS);
+
+  let tentativas = 0;
+  do {
+    randomX = Math.random() * (wrapperRect.width - pieceSize);
+    randomY = Math.random() * (wrapperRect.height - pieceSize);
+    tentativas++;
+  } while (
+    tentativas < 20 &&
+    Math.abs(randomX - correctX) < pieceSize * 1.5 &&
+    Math.abs(randomY - correctY) < pieceSize * 1.5
+  );
+
+  floatingPiece.style.left = randomX + 'px';
+  floatingPiece.style.top = randomY + 'px';
+  floatingPiece.style.width = pieceSize + 'px';
+  floatingPiece.style.height = pieceSize + 'px';
+  floatingPiece.style.display = 'block';
+  floatingPiece.classList.remove('success', 'error');
 }
 
-// ===== CLIQUE NA PEÇA =====
-function handleTileClick(slotIdx, tileEl) {
-  if (gamePhase !== 'PLAYING' || lockBoard) return;
+// ===== DRAG DA PEÇA (TOUCH) =====
+floatingPiece.addEventListener('touchstart', handleDragStart, { passive: false });
+document.addEventListener('touchmove', handleDragMove, { passive: false });
+document.addEventListener('touchend', handleDragEnd);
+
+function handleDragStart(e) {
+  if (gamePhase !== 'PLAYING' || currentTileIdx === null) return;
+  e.preventDefault();
   initAudio();
 
-  // Se clicou na mesma peça 2x → desmarca
-  if (firstSelected !== null && firstSelected === slotIdx) {
-    tileEl.classList.remove('selected');
-    firstSelected = null;
-    playSound('select');
+  isDragging = true;
+  const touch = e.touches[0];
+  const rect = floatingPiece.getBoundingClientRect();
+
+  dragOffsetX = touch.clientX - rect.left;
+  dragOffsetY = touch.clientY - rect.top;
+
+  floatingPiece.style.transition = 'none';
+}
+
+function handleDragMove(e) {
+  if (!isDragging) return;
+  e.preventDefault();
+
+  const touch = e.touches[0];
+  const wrapperRect = boardWrapper.getBoundingClientRect();
+
+  let newX = touch.clientX - dragOffsetX - wrapperRect.left;
+  let newY = touch.clientY - dragOffsetY - wrapperRect.top;
+
+  // Limita ao tabuleiro
+  const pieceW = floatingPiece.offsetWidth;
+  const pieceH = floatingPiece.offsetHeight;
+
+  newX = Math.max(0, Math.min(newX, wrapperRect.width - pieceW));
+  newY = Math.max(0, Math.min(newY, wrapperRect.height - pieceH));
+
+  floatingPiece.style.left = newX + 'px';
+  floatingPiece.style.top = newY + 'px';
+
+  // Destaca o slot sob o dedo
+  document.querySelectorAll('.slot').forEach(s => s.classList.remove('highlight'));
+  const el = document.elementFromPoint(touch.clientX, touch.clientY);
+  const slot = el?.closest('.slot');
+  if (slot && !placedTiles.has(parseInt(slot.dataset.index))) {
+    slot.classList.add('highlight');
+  }
+}
+
+function handleDragEnd(e) {
+  if (!isDragging) return;
+  isDragging = false;
+
+  document.querySelectorAll('.slot').forEach(s => s.classList.remove('highlight'));
+
+  const touch = e.changedTouches[0];
+  const wrapperRect = boardWrapper.getBoundingClientRect();
+
+  // Posição do centro da peça
+  const pieceRect = floatingPiece.getBoundingClientRect();
+  const centerX = pieceRect.left + pieceRect.width / 2;
+  const centerY = pieceRect.top + pieceRect.height / 2;
+
+  // Descobre qual slot tá embaixo
+  const el = document.elementFromPoint(centerX, centerY);
+  const slot = el?.closest('.slot');
+
+  floatingPiece.style.transition = 'transform 0.1s';
+
+  if (!slot) {
+    // Soltou fora → volta pra posição original
+    floatingPiece.style.borderColor = '#00f0ff';
+    floatingPiece.style.boxShadow = '0 0 20px #00f0ff';
     return;
   }
 
-  // Primeira seleção
-  if (firstSelected === null) {
-    firstSelected = slotIdx;
-    tileEl.classList.add('selected');
-    playSound('select');
-    return;
-  }
+  const slotIdx = parseInt(slot.dataset.index);
 
-  // Segunda seleção → troca
-  const secondIdx = slotIdx;
-  const firstIdx = firstSelected;
+  if (slotIdx === currentTileIdx) {
+    // ✅ ACERTOU
+    floatingPiece.classList.add('success');
+    playSound('correct');
 
-  const firstTileEl = document.querySelector(`[data-slot-idx="${firstIdx}"]`);
-  const secondTileEl = document.querySelector(`[data-slot-idx="${secondIdx}"]`);
+    // Marca slot como preenchido
+    slot.classList.add('filled');
+    slot.style.backgroundImage = `url(${imageSrc})`;
+    slot.style.backgroundSize = `${COLS * 100}% ${ROWS * 100}%`;
 
-  if (!firstTileEl || !secondTileEl) {
-    firstSelected = null;
-    return;
-  }
+    const col = currentTileIdx % COLS;
+    const row = Math.floor(currentTileIdx / COLS);
+    slot.style.backgroundPosition = `${(col / (COLS - 1)) * 100}% ${(row / (ROWS - 1)) * 100}%`;
 
-  // Remove seleção
-  firstTileEl.classList.remove('selected');
-  secondTileEl.classList.remove('selected');
+    placedTiles.add(slotIdx);
+    correctCount++;
+    currentScore += 10;
+    scoreDisplay.textContent = `${currentScore}`;
+    piecesDisplay.textContent = `${correctCount}/${TOTAL_TILES}`;
 
-  // Efeito visual
-  firstTileEl.classList.add('swapping');
-  secondTileEl.classList.add('swapping');
-  lockBoard = true;
+    // Esconde a peça e spawna a próxima
+    setTimeout(() => {
+      floatingPiece.style.display = 'none';
+      floatingPiece.classList.remove('success');
 
-  // Troca no ESTADO
-  [boardState[firstIdx], boardState[secondIdx]] = [boardState[secondIdx], boardState[firstIdx]];
+      // Vitória?
+      if (correctCount === TOTAL_TILES) {
+        currentScore += 100; // bônus
+        scoreDisplay.textContent = `${currentScore}`;
+        clearInterval(timerInterval);
+        playSound('victory');
+        endGame(true);
+      } else {
+        spawnNextPiece();
+      }
+    }, 500);
+  } else {
+    // ❌ ERROU
+    floatingPiece.classList.add('error');
+    playSound('error');
 
-  // ⭐ Troca visual: atualiza os backgrounds
-  swapTilesVisual(firstTileEl, secondTileEl);
-
-  setTimeout(() => {
-    firstTileEl.classList.remove('swapping');
-    secondTileEl.classList.remove('swapping');
-
-    // Reavalia cores
-    updateTileColors();
-
-    // Som
-    if (boardState[firstIdx] === firstIdx || boardState[secondIdx] === secondIdx) {
-      playSound('correct');
-    } else {
-      playSound('swap');
-    }
-
-    calculateScore();
-
-    firstSelected = null;
-    lockBoard = false;
-
-    checkVictory();
-  }, 1000);
-}
-
-// ⭐ Troca o background visual das 2 peças
-function swapTilesVisual(tile1, tile2) {
-  const bgPos1 = tile1.style.backgroundPosition;
-  const bgPos2 = tile2.style.backgroundPosition;
-  const bgImg1 = tile1.style.backgroundImage;
-  const bgImg2 = tile2.style.backgroundImage;
-
-  tile1.style.backgroundPosition = bgPos2;
-  tile2.style.backgroundPosition = bgPos1;
-  tile1.style.backgroundImage = bgImg2;
-  tile2.style.backgroundImage = bgImg1;
-}
-
-// ⭐ Atualiza as cores sem recriar
-function updateTileColors() {
-  const tiles = document.querySelectorAll('.tile');
-
-  tiles.forEach(tile => {
-    const slotIdx = parseInt(tile.dataset.slotIdx);
-    const tileId = boardState[slotIdx];
-
-    tile.classList.remove('correct');
-
-    if (tileId === slotIdx) {
-      tile.classList.add('correct');
-    }
-  });
-}
-
-// ===== PONTUAÇÃO =====
-function calculateScore() {
-  let score = 0;
-  correctPositions = 0;
-
-  boardState.forEach((tileId, slotIdx) => {
-    if (tileId === slotIdx) {
-      score += 10;
-      correctPositions++;
-    }
-  });
-
-  if (correctPositions === TOTAL_TILES) {
-    score += 100;
-  }
-
-  currentScore = score;
-  scoreDisplay.textContent = `${score}`;
-}
-
-// ===== VITÓRIA =====
-function checkVictory() {
-  const allCorrect = boardState.every((tileId, slotIdx) => tileId === slotIdx);
-  if (allCorrect) {
-    clearInterval(timerInterval);
-    playSound('victory');
-    endGame(true);
+    setTimeout(() => {
+      floatingPiece.classList.remove('error');
+    }, 500);
   }
 }
 
@@ -372,8 +390,10 @@ function endGame(win) {
   localStorage.setItem('memoryClub_totalScore', novoTotal.toString());
 
   document.getElementById('final-title').textContent = win ? '🎉 PARABÉNS!' : '⏰ FIM DE TEMPO!';
-  document.getElementById('final-stats').innerHTML = 
-    `Pontos: <strong>${currentScore}</strong><br>Total: <strong>${novoTotal}</strong>`;
+  document.getElementById('final-stats').innerHTML =
+    `Peças encaixadas: <strong>${correctCount}/${TOTAL_TILES}</strong><br>` +
+    `Pontos: <strong>${currentScore}</strong><br>` +
+    `Total: <strong>${novoTotal}</strong>`;
 
   finalModal.classList.add('active');
 }
@@ -382,10 +402,6 @@ function endGame(win) {
 document.getElementById('btn-tutorial-ok').addEventListener('click', () => {
   tutorialModal.classList.remove('active');
   tutorialShown = true;
-});
-
-document.getElementById('btn-help').addEventListener('click', () => {
-  tutorialModal.classList.add('active');
 });
 
 // ===== BOTÕES FINAIS =====
@@ -404,12 +420,13 @@ document.getElementById('btn-new-gallery').addEventListener('click', () => {
 function resetToStart() {
   clearInterval(timerInterval);
   gamePhase = 'INIT';
-  boardState = [];
-  firstSelected = null;
-  lockBoard = false;
-  boardEl.innerHTML = '';
+  placedTiles = new Set();
+  currentTileIdx = null;
+  pieceQueue = [];
+  correctCount = 0;
   currentScore = 0;
-  correctPositions = 0;
   scoreDisplay.textContent = '0';
+  piecesDisplay.textContent = '0/16';
+  floatingPiece.style.display = 'none';
   showScreen('screen-start');
-    }
+}
