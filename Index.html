@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>SELFIE - Memory Club</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <div class="game-container">
+
+    <!-- TELA 1: ESCOLHA DA FOTO -->
+    <div id="screen-start" class="screen active">
+      <h1 class="game-title">📸 SELFIE</h1>
+      <p class="subtitle">Transforme sua selfie em quebra-cabeça!</p>
+
+      <button id="btn-camera" class="btn-big">📷 TIRAR SELFIE</button>
+      <button id="btn-gallery" class="btn-big btn-secondary">🖼️ ESCOLHER DA GALERIA</button>
+
+      <input type="file" id="input-camera" accept="image/*" capture="user" hidden>
+      <input type="file" id="input-gallery" accept="image/*" hidden>
+    </div>
+
+    <!-- TELA 2: PREVIEW -->
+    <div id="screen-preview" class="screen">
+      <h2 class="section-title">Usar essa foto?</h2>
+      <div class="preview-box">
+        <img id="preview-img" alt="Preview">
+      </div>
+      <div class="preview-buttons">
+        <button id="btn-use" class="btn-primary">✅ USAR</button>
+        <button id="btn-retake" class="btn-secondary">❌ OUTRA</button>
+      </div>
+    </div>
+
+    <!-- TELA 3: JOGO -->
+    <div id="screen-game" class="screen">
+      <header class="top-bar">
+        <div class="info-item">
+          <span class="info-label" id="timer-label">MEMORIZE</span>
+          <span class="info-value timer" id="timer-display">10s</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">PTS</span>
+          <span class="info-value score" id="score-display">0</span>
+        </div>
+      </header>
+
+      <section id="board" class="puzzle-board"></section>
+
+      <footer class="bottom-panel">
+        <button id="btn-help" class="btn-help">❓ Como funciona</button>
+      </footer>
+    </div>
+
+  </div>
+
+  <!-- MODAL TUTORIAL -->
+  <div class="modal" id="tutorial-modal">
+    <div class="modal-content">
+      <h2>🎯 Como funciona</h2>
+      <p><strong>Clique em duas peças</strong> para elas trocarem de lugar.</p>
+      <p>Faça isso até todas as peças formarem a imagem corretamente.</p>
+      <p style="font-size: 0.85rem; color: #94a3b8; margin-top: 15px;">
+        🟢 Verde = no lugar certo<br>
+        🟡 Amarelo = fora do lugar
+      </p>
+      <div class="button-group">
+        <button id="btn-tutorial-ok" class="btn-primary">VAMOS!</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL FINAL -->
+  <div class="modal" id="final-modal">
+    <div class="modal-content">
+      <h2 id="final-title">🎉 PARABÉNS!</h2>
+      <p id="final-stats"></p>
+      <div class="button-group">
+        <button id="btn-new-selfie" class="btn-primary">📸 NOVA SELFIE</button>
+        <button id="btn-new-gallery" class="btn-secondary">🖼️ GALERIA</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+                            </html>
