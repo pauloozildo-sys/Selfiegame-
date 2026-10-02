@@ -42,16 +42,22 @@
           <span class="info-value timer" id="timer-display">10s</span>
         </div>
         <div class="info-item">
+          <span class="info-label">PEÇAS</span>
+          <span class="info-value" id="pieces-display">0/16</span>
+        </div>
+        <div class="info-item">
           <span class="info-label">PTS</span>
           <span class="info-value score" id="score-display">0</span>
         </div>
       </header>
 
-      <section id="board" class="puzzle-board"></section>
+      <section id="board-wrapper" class="board-wrapper">
+        <div id="board-bg" class="board-bg"></div>
+        <div id="board-grid" class="board-grid"></div>
+        <div id="floating-piece" class="floating-piece" style="display:none;"></div>
+      </section>
 
-      <footer class="bottom-panel">
-        <button id="btn-help" class="btn-help">❓ Como funciona</button>
-      </footer>
+      <p id="hint-text" class="hint-text">Arraste a peça pela imagem e descubra o lugar certo!</p>
     </div>
 
   </div>
@@ -60,11 +66,10 @@
   <div class="modal" id="tutorial-modal">
     <div class="modal-content">
       <h2>🎯 Como funciona</h2>
-      <p><strong>Clique em duas peças</strong> para elas trocarem de lugar.</p>
-      <p>Faça isso até todas as peças formarem a imagem corretamente.</p>
+      <p><strong>Arraste a peça</strong> pela imagem até descobrir o lugar certo.</p>
       <p style="font-size: 0.85rem; color: #94a3b8; margin-top: 15px;">
-        🟢 Verde = no lugar certo<br>
-        🟡 Amarelo = fora do lugar
+        🟢 Acertou = peça encaixa<br>
+        🔴 Errou = peça volta
       </p>
       <div class="button-group">
         <button id="btn-tutorial-ok" class="btn-primary">VAMOS!</button>
@@ -86,4 +91,4 @@
 
   <script src="script.js"></script>
 </body>
-                            </html>
+</html>
